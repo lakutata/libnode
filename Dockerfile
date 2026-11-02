@@ -70,14 +70,17 @@ RUN test -n "$RECIPE_COMMIT" || { echo "RECIPE_COMMIT missing: build with script
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Android: the NDK (Linux only: node's gyp archives thin archives and links its host tools with --start-group), the
-# library aligned to pages of 16 KB (Android 15 and later, Google Play), as the CI of the recipe builds it
-FROM node:22-bookworm AS android-build
+# library aligned to pages of 16 KB (Android 15 and later, Google Play), as the CI of the recipe builds it: on Ubuntu
+# 24.04, whose clang builds the host tools (the recipe takes the clang of the PATH; the clang of the NDK does not find
+# the 32-bit libatomic of the system the host tools of arm link)
+FROM ubuntu:24.04 AS android-build
 ARG ARCH
 ARG JOBS
 ARG ANDROID_NDK_VERSION
 ARG ANDROID_API
-RUN dpkg --add-architecture i386 && apt-get update \
- && apt-get install -y --no-install-recommends unzip rsync python3-setuptools gcc-multilib g++-multilib \
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl unzip git make \
+      python3 python3-setuptools rsync clang gcc-multilib g++-multilib \
  && rm -rf /var/lib/apt/lists/*
 RUN test -n "$ANDROID_NDK_VERSION" || { echo "ANDROID_NDK_VERSION missing: build with scripts/build.mjs" >&2; exit 1; }; \
     curl -fsSL -o /tmp/ndk.zip "https://dl.google.com/android/repository/android-ndk-$ANDROID_NDK_VERSION-linux.zip" \
