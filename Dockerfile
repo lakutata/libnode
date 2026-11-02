@@ -14,7 +14,9 @@ ARG JOBS=4
 # ---------------------------------------------------------------------------------------------------------------------
 # HarmonyOS: the LLVM 19 of OpenHarmony (Linux x86_64 only), a shared library (dlopened: PIE breaks its thread-local
 # storage), the native thread-local storage (-fno-emulated-tls), named libnode.so (the addons link it by that name).
-# The host tools are built by the clang of Ubuntu 24.04: V8 is code gcc compiles up to twice as slowly
+# The host tools are built by the clang of Ubuntu 24.04: V8 is code gcc compiles up to twice as slowly. They link
+# libatomic, which the build of Node.js gives the host tools of Android only: clang calls it for the atomic objects of
+# V8 that are not aligned to their size (gcc compiles them inline); before the objects, kept by --no-as-needed
 FROM ubuntu:24.04 AS harmony-build
 ARG ARCH
 ARG JOBS
@@ -46,7 +48,7 @@ RUN case "$ARCH" in \
     cd node \
  && export CC="/build/llvm/bin/$triple-clang -fno-emulated-tls" CXX="/build/llvm/bin/$triple-clang++ -fno-emulated-tls" \
            AR=/build/llvm/bin/llvm-ar AR_target=/build/llvm/bin/llvm-ar AR_host=ar \
-           CC_host=clang CXX_host=clang++ LINK_host=clang++ CFLAGS=-DNDEBUG CXXFLAGS=-DNDEBUG \
+           CC_host=clang CXX_host=clang++ LINK_host="clang++ -Wl,--no-as-needed,-latomic" CFLAGS=-DNDEBUG CXXFLAGS=-DNDEBUG \
  && ./configure --dest-cpu="$cpu" --dest-os=openharmony --cross-compiling --openssl-no-asm --shared --prefix=/build/install > /tmp/configure.log 2>&1 || { tail -40 /tmp/configure.log; exit 1; }; \
     echo "Building libnode.so for HarmonyOS ($ARCH)"; \
     make -j"$JOBS" > /tmp/make.log 2>&1 || { tail -60 /tmp/make.log; exit 1; }; \
