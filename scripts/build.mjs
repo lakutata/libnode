@@ -60,7 +60,11 @@ async function run(command, args) {
     const status = await new Promise((resolve) => child.on('close', (code, signal) => resolve(code ?? signal)))
     if (status !== 0) {
         if (actions) {
-            const message = tail.join('\n').replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
+            //GitHub cuts long annotations: the lines telling the error (each cut short: the commands of make are
+            //thousands of characters long), else the last lines, to 4000 characters from the end
+            const errors = tail.filter((line) => /error|undefined|failed|fatal/i.test(line))
+            const lines = (errors.length ? errors : tail).map((line) => line.length > 400 ? `${line.slice(0, 200)} … ${line.slice(-200)}` : line)
+            const message = lines.join('\n').slice(-4000).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
             console.log(`::error title=${platform} ${arch} failed::${message}`)
         }
         console.error(`${command} failed (${status})`)
