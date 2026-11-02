@@ -13,15 +13,19 @@ ARG JOBS=4
 
 # ---------------------------------------------------------------------------------------------------------------------
 # HarmonyOS: the LLVM 19 of OpenHarmony (Linux x86_64 only), a shared library (dlopened: PIE breaks its thread-local
-# storage), the native thread-local storage (-fno-emulated-tls), named libnode.so (the addons link it by that name)
-FROM node:22-bookworm AS harmony-build
+# storage), the native thread-local storage (-fno-emulated-tls), named libnode.so (the addons link it by that name).
+# The host tools are built by the clang of Ubuntu 24.04: V8 is code gcc compiles up to twice as slowly
+FROM ubuntu:24.04 AS harmony-build
 ARG ARCH
 ARG JOBS
 ARG NODE_VERSION
 ARG OHOS_LLVM_URL
 ARG OHOS_LLVM_SHA256
 ARG OHOS_LLVM_MIRROR
-RUN apt-get update && apt-get install -y --no-install-recommends patchelf && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl xz-utils make \
+      python3 python3-setuptools clang g++ patchelf \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 # The copy of this repository first, the URL of OpenHarmony else; checked by its sha256 either way
 RUN test -n "$OHOS_LLVM_SHA256" || { echo "OHOS_LLVM_SHA256 missing: build with scripts/build.mjs" >&2; exit 1; }; \
@@ -42,7 +46,7 @@ RUN case "$ARCH" in \
     cd node \
  && export CC="/build/llvm/bin/$triple-clang -fno-emulated-tls" CXX="/build/llvm/bin/$triple-clang++ -fno-emulated-tls" \
            AR=/build/llvm/bin/llvm-ar AR_target=/build/llvm/bin/llvm-ar AR_host=ar \
-           CC_host=gcc CXX_host=g++ LINK_host=g++ CFLAGS=-DNDEBUG CXXFLAGS=-DNDEBUG \
+           CC_host=clang CXX_host=clang++ LINK_host=clang++ CFLAGS=-DNDEBUG CXXFLAGS=-DNDEBUG \
  && ./configure --dest-cpu="$cpu" --dest-os=openharmony --cross-compiling --openssl-no-asm --shared --prefix=/build/install > /tmp/configure.log 2>&1 || { tail -40 /tmp/configure.log; exit 1; }; \
     echo "Building libnode.so for HarmonyOS ($ARCH)"; \
     make -j"$JOBS" > /tmp/make.log 2>&1 || { tail -60 /tmp/make.log; exit 1; }; \
