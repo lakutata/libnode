@@ -1,0 +1,27 @@
+# Copy the toolchains downloaded by URLs that do not last into the release toolchains of this repository, which the
+# builds download first: the LLVM of OpenHarmony (a daily build of its CI)
+name: Toolchains
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Copy the LLVM of OpenHarmony
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -a; . ./versions.env; set +a
+          name=$(basename "$OHOS_LLVM_MIRROR")
+          curl -fsSL -o "$name" "$OHOS_LLVM_URL"
+          echo "$OHOS_LLVM_SHA256  $name" | sha256sum -c -
+          gh release view toolchains > /dev/null 2>&1 || gh release create toolchains --prerelease --title Toolchains \
+            --notes "The toolchains the builds download first: copies of the ones whose URLs do not last, checked by the sha256 of versions.env."
+          gh release upload toolchains "$name" --clobber
