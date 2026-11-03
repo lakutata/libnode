@@ -13,10 +13,13 @@ ARG JOBS=4
 
 # ---------------------------------------------------------------------------------------------------------------------
 # HarmonyOS: the LLVM 19 of OpenHarmony (Linux x86_64 only), a shared library (dlopened: PIE breaks its thread-local
-# storage), the native thread-local storage (-fno-emulated-tls), named libnode.so (the addons link it by that name).
-# The host tools are built by the clang of Ubuntu 24.04: V8 is code gcc compiles up to twice as slowly. They link
-# libatomic, which the build of Node.js gives the host tools of Android only: clang calls it for the atomic objects of
-# V8 that are not aligned to their size (gcc compiles them inline); before the objects, kept by --no-as-needed
+# storage), the native thread-local storage (-fno-emulated-tls), named libnode.so (the addons link it by that name) by
+# its build, as for Android: configure.py names it libnode.so.<module version> on the other systems, and renaming it
+# afterwards with patchelf (0.18) moved its symbols into a segment listed after a note in its program headers, with
+# which the loader of HarmonyOS finds none of its symbols (scripts/check-elf.sh checks that order). The host tools are
+# built by the clang of Ubuntu 24.04: V8 is code gcc compiles up to twice as slowly. They link libatomic, which the
+# build of Node.js gives the host tools of Android only: clang calls it for the atomic objects of V8 that are not
+# aligned to their size (gcc compiles them inline); before the objects, kept by --no-as-needed
 FROM ubuntu:24.04 AS harmony-build
 ARG ARCH
 ARG JOBS
@@ -26,7 +29,7 @@ ARG OHOS_LLVM_SHA256
 ARG OHOS_LLVM_MIRROR
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl xz-utils make \
-      python3 python3-setuptools clang g++ patchelf \
+      python3 python3-setuptools clang g++ \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 # The copy of this repository first, the URL of OpenHarmony else; checked by its sha256 either way
@@ -46,6 +49,8 @@ RUN case "$ARCH" in \
       *) echo "unknown architecture of HarmonyOS: $ARCH (arm64, x64)" >&2; exit 1 ;; \
     esac; \
     cd node \
+ && sed -i "/^  if options.dest_os == 'android':\$/{N;s/^  if options.dest_os == 'android':\(\n    shlib_suffix = 'so'\)\$/  if options.dest_os in ('android', 'openharmony'):\1/}" configure.py \
+ && { grep -q "^  if options.dest_os in ('android', 'openharmony'):\$" configure.py || { echo "configure.py no longer names the library libnode.so for Android" >&2; exit 1; }; } \
  && export CC="/build/llvm/bin/$triple-clang -fno-emulated-tls" CXX="/build/llvm/bin/$triple-clang++ -fno-emulated-tls" \
            AR=/build/llvm/bin/llvm-ar AR_target=/build/llvm/bin/llvm-ar AR_host=ar \
            CC_host=clang CXX_host=clang++ LINK_host="clang++ -Wl,--no-as-needed,-latomic" CFLAGS=-DNDEBUG CXXFLAGS=-DNDEBUG \
@@ -57,8 +62,7 @@ RUN case "$ARCH" in \
 COPY scripts/check-elf.sh /build/check-elf.sh
 RUN case "$ARCH" in arm64) machine=AArch64 ;; x64) machine=X86-64 ;; esac; \
     mkdir -p /export/lib \
- && /build/llvm/bin/llvm-strip -o /export/lib/libnode.so "$(ls /build/install/lib/libnode.so.* | head -1)" \
- && patchelf --set-soname libnode.so /export/lib/libnode.so \
+ && /build/llvm/bin/llvm-strip -o /export/lib/libnode.so /build/install/lib/libnode.so \
  && sh /build/check-elf.sh /build/llvm/bin/llvm-readelf /export/lib/libnode.so "$machine" \
  && cp -R /build/install/include /export/include && cp /build/install/LICENSE /export/LICENSE
 
